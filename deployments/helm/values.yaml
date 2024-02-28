@@ -1,0 +1,37 @@
+path: /
+image: 
+  name: registry.magicleap.io/infra/tfregistry
+  tag: 0.4.0
+gcp-bucket:
+  bucket:
+    name: ml-tf-modules-registry
+    notification: 
+      enabled: true
+  
+  workload-identity:
+    namespaceOverride: ml-delivery-pr
+    enabled: true
+    google:
+      project: ml-delivery-pr
+      serviceAccounts:
+        - name: tfregistry
+          displayName: "SA for tf modules registry"
+          kubernetesServiceAccount: tfregistry
+          namespace: tfregistry
+          roles:
+            - role: roles/storage.objectAdmin
+
+
+cloudflared: 
+  replicaCount: 1
+  autoscaling:
+    enabled: false
+  tunnel: 
+    credentials: 
+      vaultEnabled: true
+      vaultPath: "k8s/data/delivery-pr/ml-delivery-pr/cf_tunnel_tfmodules_magicleap_io#credentials.json"
+    name: tfmodules_magicleap_io
+    ingress:
+      - hostname: tfmodules.magicleap.io
+        service: http://tfmodules-sdd
+      - service: http_status:404

@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tfmodules-std
+  namespace: tfregistry
+  labels: 
+    whatever: whatever
+spec:
+  replicas: 1
+  revisionHistoryLimit: 0
+  selector:
+    matchLabels:
+      app: tfmodules-std
+  template:
+    metadata:
+      labels:
+        app: tfmodules-std
+    spec:
+      containers:
+        - env:
+            - name: MODULE_PATH
+              value: /
+            - name: GOOGLE_BUCKET
+              value: ml-tf-modules-registry
+            - name: PORT
+              value: '8080'
+            - name: K_REVISION
+              value: tfmodules-00001
+            - name: K_CONFIGURATION
+              value: tfmodules
+            - name: K_SERVICE
+              value: tfmodules
+          image: {{ .Values.image.name}}:{{.Values.image.tag}}
+          name: tfmodules
+          ports:
+            - containerPort: 8080
+              name: user-port
+              protocol: TCP
+      imagePullSecrets:
+        - name: harbor-registry
+      restartPolicy: Always
+      serviceAccount: tfregistry
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tfmodules-sdd
+  namespace: tfregistry
+spec:
+  ports:
+    - name: http
+      port: 80
+      protocol: TCP
+      targetPort: 8080
+  type: ClusterIP
+  selector:
+    app: tfmodules-std
+

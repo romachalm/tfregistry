@@ -1,0 +1,18 @@
+apiVersion: v2
+name: tfregistry
+description: TF Module registry
+type: application
+version: 0.1.0
+appVersion: 0.1.0
+
+sources:
+  - https://gitlab.magicleap.io/sre/tfregistry
+
+dependencies:
+  - name: gcp-bucket
+    version: "0.1.0"
+    repository: https://registry.magicleap.io/chartrepo/charts
+  - name: cloudflared
+    repository: https://registry.magicleap.io/chartrepo/charts
+    version: 1.4.1
+

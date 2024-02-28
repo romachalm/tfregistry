@@ -1,0 +1,6 @@
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  annotations:
+    iam.gke.io/gcp-service-account: tfregistry@{{ index .Values "gcp-bucket" "workload-identity" "google" "project" }}.iam.gserviceaccount.com
+  name: tfregistry

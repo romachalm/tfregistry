@@ -1,0 +1,340 @@
+---
+# Source: tfregistry/templates/sa.yaml
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  annotations:
+    iam.gke.io/gcp-service-account: tfregistry@ml-delivery-pr.iam.gserviceaccount.com
+  name: tfregistry
+---
+# Source: tfregistry/charts/cloudflared/templates/secret.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: test-cloudflared-tunnel-secret
+  labels:
+    helm.sh/chart: cloudflared-1.4.1
+    app.kubernetes.io/name: cloudflared
+    app.kubernetes.io/instance: test
+    app.kubernetes.io/version: "2023.2.1"
+    app.kubernetes.io/managed-by: Helm
+data:
+  credentials.json: "PHBhdGg6azhzL2RhdGEvZGVsaXZlcnktcHIvbWwtZGVsaXZlcnktcHIvY2ZfdHVubmVsX3RmbW9kdWxlc19tYWdpY2xlYXBfaW8jY3JlZGVudGlhbHMuanNvbj4="
+---
+# Source: tfregistry/templates/harbor-registry.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: harbor-registry
+type: kubernetes.io/dockerconfigjson
+stringData:
+  .dockerconfigjson: "<path:k8s/data/shared/c8-registry#dockerconfigjson>"
+---
+# Source: tfregistry/charts/cloudflared/templates/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test-cloudflared
+  labels:
+    helm.sh/chart: cloudflared-1.4.1
+    app.kubernetes.io/name: cloudflared
+    app.kubernetes.io/instance: test
+    app.kubernetes.io/version: "2023.2.1"
+    app.kubernetes.io/managed-by: Helm
+data:
+  config.yaml: |
+    # Tunnel name
+    tunnel: "tfmodules_magicleap_io"
+
+    # Credentials
+    credentials-file: "/etc/cloudflared/creds/credentials.json"
+
+    # Serves the metrics server under /metrics and the readiness server under /ready
+    metrics: "0.0.0.0:2000"
+
+    # Logging
+    loglevel: "info"
+    transport-loglevel: "warn"
+
+    # Autoupdates applied in a k8s pod will be lost when the pod is removed or restarted
+    no-autoupdate: true
+
+    # Shutdown connection draining
+    grace-period: "30s"
+
+    
+
+    # https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/configuration/ingress
+    ingress:
+      - hostname: tfmodules.magicleap.io
+        service: http://tfmodules-sdd
+      - service: http_status:404
+---
+# Source: tfregistry/templates/standard-deployment.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: tfmodules-sdd
+  namespace: tfregistry
+spec:
+  ports:
+    - name: http
+      port: 80
+      protocol: TCP
+      targetPort: 8080
+  type: ClusterIP
+  selector:
+    app: tfmodules-std
+---
+# Source: tfregistry/charts/cloudflared/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-cloudflared
+  labels:
+    helm.sh/chart: cloudflared-1.4.1
+    app.kubernetes.io/name: cloudflared
+    app.kubernetes.io/instance: test
+    app.kubernetes.io/version: "2023.2.1"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cloudflared
+      app.kubernetes.io/instance: test
+  template:
+    metadata:
+      annotations:
+        checksum/config: c4792c9e4ad0755ef9fc4bb1b90ba8d278a96afd0ef615d6e99970e980397dc5
+      labels:
+        app.kubernetes.io/name: cloudflared
+        app.kubernetes.io/instance: test
+    spec:
+      securityContext:
+        {}
+      containers:
+        - name: cloudflared
+          securityContext:
+            {}
+          image: "cloudflare/cloudflared:2023.2.1-amd64"
+          imagePullPolicy: IfNotPresent
+          args:
+            - tunnel
+            - --config
+            - "/etc/cloudflared/config/config.yaml"
+            - run
+          livenessProbe:
+            httpGet:
+              path: /ready
+              port: 2000
+            failureThreshold: 1
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            - name: config
+              mountPath: "/etc/cloudflared/config"
+              readOnly: true
+            - name: creds
+              mountPath: /etc/cloudflared/creds
+              readOnly: true
+          resources:
+            {}
+      volumes:
+        - name: creds
+          secret:
+            secretName: "test-cloudflared-tunnel-secret"
+            items:
+              - key: credentials.json
+                path: credentials.json
+                mode: 0444
+        - name: config
+          configMap:
+            name: test-cloudflared
+            items:
+              - key: config.yaml
+                path: config.yaml
+                mode: 0444
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 1
+            podAffinityTerm:
+              topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: cloudflared
+                  app.kubernetes.io/instance: test
+---
+# Source: tfregistry/templates/standard-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tfmodules-std
+  namespace: tfregistry
+  labels: 
+    whatever: whatever
+spec:
+  replicas: 1
+  revisionHistoryLimit: 0
+  selector:
+    matchLabels:
+      app: tfmodules-std
+  template:
+    metadata:
+      labels:
+        app: tfmodules-std
+    spec:
+      containers:
+        - env:
+            - name: MODULE_PATH
+              value: /
+            - name: GOOGLE_BUCKET
+              value: ml-tf-modules-registry
+            - name: PORT
+              value: '8080'
+            - name: K_REVISION
+              value: tfmodules-00001
+            - name: K_CONFIGURATION
+              value: tfmodules
+            - name: K_SERVICE
+              value: tfmodules
+          image: registry.magicleap.io/infra/tfregistry:0.4.0
+          name: tfmodules
+          ports:
+            - containerPort: 8080
+              name: user-port
+              protocol: TCP
+      imagePullSecrets:
+        - name: harbor-registry
+      restartPolicy: Always
+      serviceAccount: tfregistry
+---
+# Source: tfregistry/charts/gcp-bucket/charts/workload-identity/templates/iam.yaml
+apiVersion: iam.cnrm.cloud.google.com/v1beta1
+kind: IAMPolicyMember
+metadata:
+  name: tfregistry-iam-0
+  namespace: ml-delivery-pr
+  labels:
+    helm.sh/chart: workload-identity-0.16.0
+    app.kubernetes.io/name: workload-identity
+    app.kubernetes.io/instance: test
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  member: serviceAccount:tfregistry@ml-delivery-pr.iam.gserviceaccount.com
+  role: roles/storage.objectAdmin
+  resourceRef:
+    apiVersion: resourcemanager.cnrm.cloud.google.com/v1beta1
+    kind: Project
+    external: projects/ml-delivery-pr
+---
+# Source: tfregistry/charts/gcp-bucket/charts/workload-identity/templates/workloadIdentity.yaml
+apiVersion: iam.cnrm.cloud.google.com/v1beta1
+kind: IAMPolicyMember
+metadata:
+  name: tfregistry-tfregistry-wi
+  namespace: ml-delivery-pr
+  labels:
+    helm.sh/chart: workload-identity-0.16.0
+    app.kubernetes.io/name: workload-identity
+    app.kubernetes.io/instance: test
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  member: "serviceAccount:ml-delivery-pr.svc.id.goog[tfregistry/tfregistry]"
+  role: roles/iam.workloadIdentityUser
+  resourceRef:
+    apiVersion: resourcemanager.cnrm.cloud.google.com/v1beta1
+    kind: Project
+    external: "projects/ml-delivery-pr"
+---
+# Source: tfregistry/charts/gcp-bucket/templates/pubsub.yaml
+apiVersion: iam.cnrm.cloud.google.com/v1beta1
+kind: IAMPolicyMember
+metadata:
+  name: notif-ml-tf-modules-registry-publish
+  namespace: ml-delivery-pr
+spec:
+  member: serviceAccount:service-974545629797@gs-project-accounts.iam.gserviceaccount.com
+  role: roles/pubsub.publisher
+  resourceRef:
+    apiVersion: pubsub.cnrm.cloud.google.com/v1beta1
+    kind: PubSubTopic
+    name: notif-ml-tf-modules-registry
+---
+# Source: tfregistry/charts/gcp-bucket/templates/pubsub.yaml
+apiVersion: iam.cnrm.cloud.google.com/v1beta1
+kind: IAMPolicyMember
+metadata:
+  name: notif-ml-tf-modules-registry-read
+  namespace: ml-delivery-pr
+spec:
+  member: serviceAccount:argo-events@ml-delivery-pr.iam.gserviceaccount.com
+  role: roles/pubsub.viewer
+  resourceRef:
+    apiVersion: pubsub.cnrm.cloud.google.com/v1beta1
+    kind: PubSubTopic
+    name: notif-ml-tf-modules-registry
+---
+# Source: tfregistry/charts/gcp-bucket/charts/workload-identity/templates/serviceAccounts.yaml
+apiVersion: iam.cnrm.cloud.google.com/v1beta1
+kind: IAMServiceAccount
+metadata:
+  name: tfregistry
+  namespace: ml-delivery-pr
+  labels:
+    helm.sh/chart: workload-identity-0.16.0
+    app.kubernetes.io/name: workload-identity
+    app.kubernetes.io/instance: test
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    cnrm.cloud.google.com/project-id: ml-delivery-pr
+    cnrm.cloud.google.com/management-conflict-prevention-policy: none
+spec:
+  displayName: SA for tf modules registry
+---
+# Source: tfregistry/charts/gcp-bucket/templates/pubsub.yaml
+apiVersion: pubsub.cnrm.cloud.google.com/v1beta1
+kind: PubSubTopic
+metadata:
+  name: notif-ml-tf-modules-registry
+  namespace: ml-delivery-pr
+---
+# Source: tfregistry/charts/gcp-bucket/templates/bucket.yaml
+apiVersion: storage.cnrm.cloud.google.com/v1beta1
+kind: StorageBucket
+metadata:
+  annotations:
+    cnrm.cloud.google.com/force-destroy: "false" # security : forces to delete the content before deleting the bucket
+  name: ml-tf-modules-registry
+  namespace: ml-delivery-pr
+---
+# Source: tfregistry/charts/gcp-bucket/templates/bucket.yaml
+apiVersion: storage.cnrm.cloud.google.com/v1beta1
+kind: StorageBucketAccessControl
+metadata:
+  name: ml-tf-modules-registry-accesscontrol
+  namespace: ml-delivery-pr
+spec:
+  bucketRef:
+    name: ml-tf-modules-registry
+  entity: user-tfregistry@ml-delivery-pr.iam.gserviceaccount.com
+  role: WRITER
+---
+# Source: tfregistry/charts/gcp-bucket/templates/pubsub.yaml
+apiVersion: storage.cnrm.cloud.google.com/v1beta1
+kind: StorageNotification
+metadata:
+  name: storagenotification-sample
+  namespace: ml-delivery-pr
+spec:
+  bucketRef:
+    name: ${PROJECT_ID?}-storagenotification-dep
+  payloadFormat: JSON_API_V1
+  topicRef:
+    name: notif-ml-tf-modules-registry
+  eventTypes:
+    - "OBJECT_FINALIZE"

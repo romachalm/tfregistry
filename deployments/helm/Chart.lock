@@ -1,0 +1,9 @@
+dependencies:
+- name: gcp-bucket
+  repository: https://registry.magicleap.io/chartrepo/charts
+  version: 0.1.0
+- name: cloudflared
+  repository: https://registry.magicleap.io/chartrepo/charts
+  version: 1.4.1
+digest: sha256:88b43acdeae1d2277b342818ebf8d159b9fcaceddc3853baa5425abc13c814b8
+generated: "2023-09-12T15:53:26.811688+02:00"

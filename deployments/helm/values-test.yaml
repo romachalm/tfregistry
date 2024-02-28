@@ -1,0 +1,18 @@
+domain: tfmodules.magicleap.io
+gcp-bucket:
+  bucket:
+    name: ml-tf-modules-registry
+    notification:
+      enabled: true
+      projectNumber: "974545629797"
+  workload-identity:
+    enabled: true
+    google:
+      project: ml-delivery-pr
+      serviceAccounts:
+        - name: tfregistry
+          displayName: "SA for tf modules registry"
+          kubernetesServiceAccount: tfregistry
+          namespace: tfregistry
+          roles:
+            - role: roles/storage.objectAdmin

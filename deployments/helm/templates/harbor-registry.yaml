@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: harbor-registry
+type: kubernetes.io/dockerconfigjson
+stringData:
+  .dockerconfigjson: "<path:k8s/data/shared/c8-registry#dockerconfigjson>"
